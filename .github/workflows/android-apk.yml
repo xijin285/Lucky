@@ -1,0 +1,96 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      EXPO_NO_TELEMETRY: 1
+      NODE_ENV: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Free runner disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost /opt/hostedtoolcache/CodeQL
+          sudo rm -rf "$ANDROID_SDK_ROOT/ndk"
+          sudo mkdir -p "$ANDROID_SDK_ROOT/ndk"
+          sudo chown -R "$USER:$USER" "$ANDROID_SDK_ROOT/ndk"
+          df -h /
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify endpoint coverage, types, and dependencies
+        run: npm run verify
+
+      - name: Generate Android project
+        run: npx expo prebuild --platform android --clean
+
+      - name: Configure Gradle memory
+        run: |
+          sed -i 's/^org.gradle.jvmargs=.*/org.gradle.jvmargs=-Xmx3072m -XX:MaxMetaspaceSize=1024m -XX:ReservedCodeCacheSize=512m/' android/gradle.properties
+          sed -i 's/^org.gradle.parallel=.*/org.gradle.parallel=false/' android/gradle.properties
+          sed -i 's/^reactNativeArchitectures=.*/reactNativeArchitectures=armeabi-v7a,arm64-v8a/' android/gradle.properties
+          printf '\norg.gradle.workers.max=2\n' >> android/gradle.properties
+          df -h /
+
+      - name: Build release APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+          df -h /
+
+      - name: Collect APK
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          cp android/app/build/outputs/apk/release/app-release.apk artifacts/lucky-mobile.apk
+          file artifacts/lucky-mobile.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: lucky-mobile-apk
+          path: artifacts/lucky-mobile.apk
+          if-no-files-found: error
+
+      - name: Publish build summary
+        if: always()
+        run: |
+          {
+            echo "## Android APK Build"
+            echo ""
+            echo "- Build type: release APK signed with the generated debug key"
+            echo "- GitHub artifact: lucky-mobile-apk"
+            echo "- File: lucky-mobile.apk"
+          } >> "$GITHUB_STEP_SUMMARY"
