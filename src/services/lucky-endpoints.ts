@@ -1,5 +1,6 @@
 import { LUCKY_ENDPOINTS, LUCKY_MODULES } from '@/src/api/lucky-endpoints.generated';
 import { LuckyAuthError, refreshLuckyToken, withLuckyRequestNonce } from '@/src/lib/lucky-fetch';
+import { toLuckyProxyUrl } from '@/src/lib/web-proxy';
 import { endLuckySession, luckySessionState } from '@/src/store/lucky-session';
 import type {
   LuckyEndpointCall,
@@ -136,7 +137,7 @@ export async function callLuckyEndpoint(call: LuckyEndpointRunnerCall): Promise<
   }
 
   try {
-    const response = await fetch(`${baseUrl}${withLuckyRequestNonce(path)}`, {
+    const response = await fetch(toLuckyProxyUrl(`${baseUrl}${withLuckyRequestNonce(path)}`), {
       method: call.method,
       headers,
       body: requestBody as BodyInit | undefined,

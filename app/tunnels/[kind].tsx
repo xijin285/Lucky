@@ -8,6 +8,7 @@ import { EmptyState, ErrorState, FullScreenSafeArea, IconTile, Page, PageHeader,
 import { StructuredDataView } from '@/src/components/structured-form';
 import { TunnelForm, tunnelDefaults, validateTunnelForm, type TunnelFormType } from '@/src/components/tunnel-form';
 import { useAppTheme } from '@/src/lib/theme';
+import { toLuckyProxyUrl } from '@/src/lib/web-proxy';
 import { queryClient } from '@/src/lib/query-client';
 import { luckySessionState } from '@/src/store/lucky-session';
 import { cloudflareDns, deleteTunnel, deleteTunnelChild, enableTunnel, getFrpStatus, getStunSettings, getTunnel, getTunnelLogs, getTunnelLastLogs, isTunnelKind, listTunnelChildren, listTunnels, record, reorderTunnels, saveStunSettings, saveTunnel, saveTunnelChild, testStunWebhook, tunnelLogLines, tunnelTitles, type TunnelCollection, type TunnelKind } from '@/src/services/tunnels';
@@ -78,7 +79,9 @@ function NatDetector({ close }: { close: () => void }) {
       url.searchParams.set('Lucky-Admin-Token', luckySessionState.token);
       url.searchParams.set('server', server.trim()); url.searchParams.set('_', String(Date.now()));
       setBusy(true);
-      const socket = new WebSocket(url.toString()); socketRef.current = socket;
+      // web 端走 /proxy 通道，先按 http 形式改写再换回 ws 协议头
+      const socketUrl = toLuckyProxyUrl(url.toString().replace(/^ws:/i, 'http:').replace(/^wss:/i, 'https:')).replace(/^http:/i, 'ws:').replace(/^https:/i, 'wss:');
+      const socket = new WebSocket(socketUrl); socketRef.current = socket;
       socket.onmessage = event => {
         if (socketRef.current !== socket) return;
         try { const data = JSON.parse(String(event.data)); setLines(current => [...current, text(data.log ?? data.result ?? data.error)].filter(Boolean).slice(-200)); if (data.result || data.error) stop(); }

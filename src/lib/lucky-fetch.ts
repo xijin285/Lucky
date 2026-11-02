@@ -1,4 +1,6 @@
 import { endLuckySession, luckySessionState, saveLuckyToken } from '@/src/store/lucky-session';
+import { postLuckyLogin } from '@/src/lib/lucky-login';
+import { toLuckyProxyUrl } from '@/src/lib/web-proxy';
 import type { LuckyRecord, LuckyResponse } from '@/src/types/lucky';
 
 export class LuckyAuthError extends Error {
@@ -67,27 +69,8 @@ export async function refreshLuckyToken() {
   tokenRefreshPromise = (async () => {
     const { baseUrl, account, password } = luckySessionState;
     if (!baseUrl || !account || !password) throw new LuckyAuthError();
-    const controller = new AbortController();
-    let timedOut = false;
-    const timeout = setTimeout(() => {
-      timedOut = true;
-      controller.abort();
-    }, DEFAULT_REQUEST_TIMEOUT_MS);
     try {
-      const response = await fetch(getUrl(baseUrl, withLuckyRequestNonce('/api/login')), {
-        method: 'POST',
-        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ Account: account.trim(), Password: password, TwoFA: '', TwoFACode: '' }),
-        signal: controller.signal,
-      });
-      let payload: LuckyRecord;
-      try {
-        payload = await response.json() as LuckyRecord;
-      } catch {
-        throw new LuckyAuthError(response.ok
-          ? '重新登录失败：服务器返回了无法识别的数据'
-          : `重新登录失败（HTTP ${response.status}）`);
-      }
+      const { response, payload } = await postLuckyLogin({ baseUrl, account, password });
       if (!response.ok || numericRet(payload.ret) !== 0) throw new LuckyAuthError(typeof payload.msg === 'string' ? payload.msg : undefined);
       const nested = payload.data && typeof payload.data === 'object' && !Array.isArray(payload.data) ? payload.data as LuckyRecord : {};
       const token = [payload.token, payload.Token, payload.AdminToken, payload.LuckyAdminToken,
@@ -99,11 +82,8 @@ export async function refreshLuckyToken() {
       return token;
     } catch (error) {
       if (error instanceof LuckyAuthError) throw error;
-      if (timedOut) throw new LuckyAuthError('重新登录超时，请检查服务器连接');
       if (error instanceof Error && error.name === 'AbortError') throw new LuckyAuthError('重新登录请求已取消');
       throw new LuckyAuthError('重新登录失败，请检查服务器连接');
-    } finally {
-      clearTimeout(timeout);
     }
   })();
   try {
@@ -151,7 +131,7 @@ export async function luckyFetch<T extends LuckyRecord = LuckyRecord>(
   if (token) headers.set('Lucky-Admin-Token', token);
 
   try {
-    const response = await fetch(getUrl(baseUrl, withLuckyRequestNonce(path)), { ...requestOptions, headers, signal: controller.signal });
+    const response = await fetch(toLuckyProxyUrl(getUrl(baseUrl, withLuckyRequestNonce(path))), { ...requestOptions, headers, signal: controller.signal });
     const contentType = response.headers.get('content-type') ?? '';
     const contentDisposition = response.headers.get('content-disposition') ?? '';
     const filename = decodeFilename(contentDisposition);

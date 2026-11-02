@@ -1,4 +1,5 @@
-import { createLuckyRequestNonce, luckyFetch } from '@/src/lib/lucky-fetch';
+import { luckyFetch } from '@/src/lib/lucky-fetch';
+import { postLuckyLogin } from '@/src/lib/lucky-login';
 import { getDdnsLastLogs, getDdnsLogs, getDdnsTask, getDdnsTasks, setDdnsTaskEnabled, syncDdnsTask } from '@/src/services/ddns';
 import { flushSslCertificate, getSslCertificate, getSslCertificates, getSslLastLogs, getSslLogs, setSslCertificateEnabled, syncSslCertificate } from '@/src/services/ssl';
 import type { LuckyDashboard, LuckyListItem, LuckyLoginInput, LuckyRecord, LuckyServiceKind } from '@/src/types/lucky';
@@ -61,29 +62,13 @@ function query(params: Record<string, string | number | boolean | undefined>) {
 }
 
 export async function loginToLucky(input: LuckyLoginInput) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 12000);
   let response: Response;
   let payload: LuckyRecord;
   try {
-    const twoFACode = input.twoFACode?.trim() ?? '';
-    response = await fetch(`${input.baseUrl.trim().replace(/\/+$/, '')}/api/login?_=${createLuckyRequestNonce()}`, {
-      method: 'POST',
-      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-      body: body({ Account: input.account.trim(), Password: input.password, TwoFA: '', TwoFACode: twoFACode }),
-      signal: controller.signal,
-    });
-    try {
-      payload = await response.json() as LuckyRecord;
-    } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') throw error;
-      throw new Error(response.ok ? '登录失败：服务器返回了无法识别的数据' : `登录失败（HTTP ${response.status}）`);
-    }
+    ({ response, payload } = await postLuckyLogin(input));
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') throw new Error('登录超时，请检查服务器地址');
     throw error;
-  } finally {
-    clearTimeout(timeout);
   }
   const ret = typeof payload.ret === 'number'
     ? payload.ret

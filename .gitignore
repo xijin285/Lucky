@@ -72,3 +72,7 @@ skills-lock.json
 /ios
 /android
 /artifacts/
+
+# 本地构建产物与调试日志
+.login-debug.log
+*.apk

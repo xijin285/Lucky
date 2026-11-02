@@ -4,6 +4,7 @@ import { ungzip } from 'pako';
 import { startTransition, useCallback, useState } from 'react';
 
 import { refreshLuckyToken } from '@/src/lib/lucky-fetch';
+import { toLuckyProxyUrl } from '@/src/lib/web-proxy';
 import { endLuckySession, luckySessionState } from '@/src/store/lucky-session';
 import type { LuckyLiveStatus, LuckyRecord, LuckyStatusSample } from '@/src/types/lucky';
 
@@ -96,7 +97,10 @@ async function messageBytes(data: unknown) {
 function statusSocketUrl() {
   const base = luckySessionState.baseUrl.trim().replace(/\/+$/, '');
   const socketBase = base.replace(/^http:/i, 'ws:').replace(/^https:/i, 'wss:');
-  return `${socketBase}/api/status/ws?Lucky-Admin-Token=${encodeURIComponent(luckySessionState.token)}&_=${Date.now()}`;
+  const raw = `${socketBase}/api/status/ws?Lucky-Admin-Token=${encodeURIComponent(luckySessionState.token)}&_=${Date.now()}`;
+  // web 端复用 /proxy 通道：先按 http 形式改写，再换回 ws 协议头
+  const proxied = toLuckyProxyUrl(raw.replace(/^ws:/i, 'http:').replace(/^wss:/i, 'https:'));
+  return proxied.replace(/^http:/i, 'ws:').replace(/^https:/i, 'wss:');
 }
 
 export function useLuckyStatus(enabled = true) {
